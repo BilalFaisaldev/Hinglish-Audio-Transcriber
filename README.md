@@ -51,3 +51,5 @@ Email: bilaifaisalarain@gmail.com
 GitHub: @bilaifaisaldev
 
 Instagram: @bilal.faisalarain
+
+project-link: https://hinglish-audio-transcriber.ai.studio
