@@ -34,7 +34,12 @@ While traditional transcription engines only recognize standard English or forma
    ```bash
    git clone [https://github.com/bilaifaisaldev/hinglish-audio-transcriber.git](https://github.com/bilaifaisaldev/hinglish-audio-transcriber.git)
    cd hinglish-audio-transcriber
-   👤 Author
+   
+
+
+
+👤 Author
+
 Developed by Bilal Faisal Arain
 
 Role: Full Stack Web Developer & QA Tester
