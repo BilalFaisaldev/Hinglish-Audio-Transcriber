@@ -1,0 +1,6 @@
+{
+  "name": "Hinglish Audio Transcriber",
+  "description": "Upload or record audio to instantly transcribe speech into natural Hinglish (Hindi + English) with phonetic glossaries, English translations, and structured summaries powered by Gemini 3.5.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
