@@ -8,7 +8,7 @@ While traditional transcription engines only recognize standard English or forma
 
 ## 🚀 Key Features
 
-* **🎙️ Audio Upload & Direct Recording:** Upload your existing audio files (`.mp3`, `.wav`, `.m4a`) or record real-time voice directly inside your browser with a single click.
+* **🎙️ Audio & Video Voiceover Transcription:** Upload your audio files (`.mp3`, `.wav`, `.m4a`, `.webm`) or video files (`.mp4`, `.mov`, `.mkv`, `.webm` up to 100MB), or record real-time voice directly inside your browser. Automatically isolates and transcribes spoken voiceover/dialogue while filtering out background music and noise.
 * **🎯 Hinglish Phonetics Transcription:** Powered by a customized speech recognition pipeline that understands regional accents, slangs, and conversational speech patterns to transcribe them in their actual Romanized phonetic form (e.g., *"kya haal hai"*).
 * **🌎 Parallel Translations & Summaries:** 
   * **English Translation:** Instantly generates a parallel, grammatically accurate English translation alongside your transcription.
@@ -32,24 +32,18 @@ While traditional transcription engines only recognize standard English or forma
 
 1. **Clone the repository:**
    ```bash
-   git clone [https://github.com/bilaifaisaldev/hinglish-audio-transcriber.git](https://github.com/bilaifaisaldev/hinglish-audio-transcriber.git)
+   git clone https://github.com/BilalFaisaldev/Hinglish-Audio-Transcriber.git
    cd hinglish-audio-transcriber
-   
+   ```
 
+## 👤 Author
 
-
-👤 Author
-
-Developed by Bilal Faisal Arain
+Developed by **Muhammad Bilal Faisal**
 
 Role: Full Stack Web Developer & QA Tester
 
 Location: Karachi, Pakistan 🇵🇰
 
-Email: bilaifaisalarain@gmail.com
+Email: bilalfaisalarain@gmail.com
 
-GitHub: @bilaifaisaldev
-
-Instagram: @bilal.faisalarain
-
-project-link: https://hinglish-audio-transcriber.ai.studio
+GitHub: [@BilalFaisaldev](https://github.com/BilalFaisaldev)
