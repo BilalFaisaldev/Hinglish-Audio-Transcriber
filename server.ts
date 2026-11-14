@@ -32,7 +32,7 @@ async function seedDatabase() {
       
       const DB_PATH = path.join(process.cwd(), "server-db.json");
       let localUsers = [{
-        name: "Bilal Faisal Arain",
+        name: "Muhammad Bilal Faisal",
         email: "farain539@gmail.com",
         password: "password123",
         role: "Owner" as const,
@@ -190,6 +190,20 @@ async function getTransporter() {
   }
 }
 
+// Helper to resolve appropriate file extension from mimeType
+function getExtensionFromMime(mime: string): string {
+  if (mime.includes("mp4")) return ".mp4";
+  if (mime.includes("webm")) return ".webm";
+  if (mime.includes("quicktime") || mime.includes("mov")) return ".mov";
+  if (mime.includes("matroska") || mime.includes("mkv")) return ".mkv";
+  if (mime.includes("avi")) return ".avi";
+  if (mime.includes("mpeg") || mime.includes("mp3")) return ".mp3";
+  if (mime.includes("wav")) return ".wav";
+  if (mime.includes("ogg")) return ".ogg";
+  if (mime.includes("m4a")) return ".m4a";
+  return ".bin";
+}
+
 async function startServer() {
   // Seed the PostgreSQL Database first
   await seedDatabase();
@@ -197,9 +211,9 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  // Middleware for large JSON bodies (essential for audio uploads)
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.urlencoded({ limit: "50mb", extended: true }));
+  // Middleware for large JSON bodies (essential for audio & video uploads up to 100MB)
+  app.use(express.json({ limit: "100mb" }));
+  app.use(express.urlencoded({ limit: "100mb", extended: true }));
 
   // Initialize Gemini client safely
   let ai: GoogleGenAI | null = null;
@@ -215,13 +229,17 @@ async function startServer() {
     });
   }
 
-  // API endpoint for transcribing audio
+  // API endpoint for transcribing audio and video voiceovers
   app.post("/api/transcribe", async (req, res) => {
-    try {
-      const { audio, mimeType, instruction, mode } = req.body;
+    let uploadedFileRef: any = null;
+    let tempFilePath: string | null = null;
 
-      if (!audio) {
-        return res.status(400).json({ error: "No audio data provided" });
+    try {
+      const { audio, media, mimeType, instruction, mode } = req.body;
+      const mediaPayload = media || audio;
+
+      if (!mediaPayload) {
+        return res.status(400).json({ error: "No audio or video data provided" });
       }
 
       // Get settings from SQL DB
@@ -250,48 +268,99 @@ async function startServer() {
         }
       });
 
-      // Clean base64 data (remove "data:audio/xxx;base64," if present)
-      let base64Data = audio;
-      if (audio.includes(";base64,")) {
-        base64Data = audio.split(";base64,").pop();
+      // Clean base64 data (remove "data:...;base64," if present)
+      let base64Data = mediaPayload;
+      if (mediaPayload.includes(";base64,")) {
+        base64Data = mediaPayload.split(";base64,").pop();
       }
 
       const defaultMimeType = mimeType || "audio/webm";
+      const isVideo = defaultMimeType.startsWith("video/");
 
-      // Build the transcription prompt
+      // Build the transcription prompt with dedicated video voiceover handling
       let systemPrompt = "";
       if (mode === "english") {
-        systemPrompt = "You are an expert bilingual transcriber and translator. " +
-          "Your task is to transcribe the provided audio and translate any spoken parts (e.g., Hinglish, Hindi, Urdu) directly into clear, natural, grammatically correct standard English. " +
+        systemPrompt = "You are an expert bilingual transcriber and translator specializing in voiceovers and speech. " +
+          (isVideo
+            ? "The provided file is a video. Your primary goal is to extract and transcribe all spoken voiceover, narration, dialogue, and speech from this video, and translate any spoken parts (e.g., Hinglish, Hindi, Urdu) directly into clear, natural, grammatically correct standard English. Ignore background music, sound effects, ambient noise, or visual-only text on screen unless it is being spoken out loud. Focus completely on the spoken voice. "
+            : "Your task is to transcribe the provided audio and translate any spoken parts (e.g., Hinglish, Hindi, Urdu) directly into clear, natural, grammatically correct standard English. ") +
           "Rules:\n" +
           "1. Write the final transcription purely in standard English. Translate spoken Hinglish/Hindi parts directly into standard English.\n" +
-          "2. Ensure the translation sounds natural and captures the accurate intent of the speaker.\n" +
+          "2. Ensure the translation sounds natural and captures the accurate intent of the speaker/narrator.\n" +
           "3. Keep English words as spoken, adjusting grammar if they are mixed with Hindi words.\n" +
-          "4. Do NOT leave words in Romanized Hindi (e.g., instead of transcribing 'Mera project complete ho gaya hai', write 'My project has been completed').\n" +
-          "5. After the transcription, provide a brief 2-3 sentence English summary of the audio, preceded by '---' and labeled as '**English Summary:**'.\n" +
-          "6. Also output a list of **Key Words / Vocabulary** containing interesting or common words or phrases from the spoken audio and their translation/meanings in English.";
+          "4. Do NOT leave words in Romanized Hindi (e.g., instead of transcribing 'Mera video dekhne ke liye shukriya', write 'Thank you for watching my video').\n" +
+          "5. After the transcription, provide a brief 2-3 sentence English summary of the speech/voiceover, preceded by '---' and labeled as '**English Summary:**'.\n" +
+          "6. Also output a list of **Key Words / Vocabulary** containing interesting or common words or phrases from the voiceover/audio and their translation/meanings in English.";
       } else {
-        systemPrompt = "You are an expert bilingual transcriber specializing in Hinglish. " +
-          "Your task is to transcribe the provided audio in Hinglish. " +
-          "Hinglish is a blend of Hindi (and Urdu) and English, written in the Roman (Latin) script. " +
+        systemPrompt = "You are an expert bilingual transcriber specializing in Hinglish speech and video voiceovers. " +
+          (isVideo
+            ? "The user has provided a video file. Your task is to listen to the audio track and transcribe all spoken voiceover, dialogues, speech, or narration from this video into Roman Hinglish. " +
+              "Ignore background music, BGM, sound effects, or ambient noise. Focus purely on transcribing what the speaker(s) or narrator says in the video. "
+            : "Your task is to transcribe the provided audio in Hinglish. ") +
+          "Hinglish is a blend of Hindi (and Urdu) and English, written in the Roman (Latin) script.\n" +
           "Rules:\n" +
-          "1. Write the transcription exactly as spoken, but in Roman script (e.g., write 'Aap kaise hain?', 'Main office ja raha hoon', 'Let's meet at 5 PM').\n" +
-          "2. Spell Hindi words phonetically and naturally in English letters.\n" +
-          "3. Keep English words in English spelling (e.g., 'office', 'meeting', 'phone', 'cancel').\n" +
-          "4. Preserve the emotional tone and spoken expressions (like 'yaar', 'achha', 'umm', 'oh').\n" +
-          "5. Do NOT translate the entire speech to standard English or Devnagari Hindi. It must remain in conversational Roman Hinglish.\n" +
-          "6. If the audio is purely in English, write the English text as is.\n" +
-          "7. After the transcription, provide a brief 2-3 sentence English summary of the audio, preceded by '---' and labeled as '**English Summary:**'.\n" +
-          "8. Also output a list of **Key Words / Vocabulary** containing interesting or common Hinglish/Hindi words from the audio with their English meanings.";
+          "1. Write the transcription exactly as spoken in the voiceover/speech, but in Roman script (e.g., write 'Aap kaise hain?', 'Main office ja raha hoon', 'Is video mein hum baat karenge...', 'Let's meet at 5 PM').\n" +
+          "2. Spell Hindi/Urdu words phonetically and naturally in English letters.\n" +
+          "3. Keep English words in standard English spelling (e.g., 'video', 'content', 'channel', 'project', 'subscribe', 'office').\n" +
+          "4. Preserve the emotional tone, spoken expressions, and colloquial terms (e.g., 'yaar', 'bhai', 'achha', 'dekho', 'guys').\n" +
+          "5. Do NOT translate the entire speech to formal English or Devnagari Hindi. It must remain in conversational Roman Hinglish.\n" +
+          "6. If the voiceover is in English, write the English text as spoken.\n" +
+          "7. After the transcription, provide a brief 2-3 sentence English summary of the voiceover/speech, preceded by '---' and labeled as '**English Summary:**'.\n" +
+          "8. Also output a list of **Key Words / Vocabulary** containing interesting or common Hinglish/Hindi words from the voiceover with their English meanings.";
       }
 
       const finalPrompt = instruction 
         ? `${systemPrompt}\n\nAdditional user direction: ${instruction}`
         : systemPrompt;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: [
+      let generateContentContents: any[] = [];
+      const bufferSize = Buffer.byteLength(base64Data, "base64");
+
+      // For videos or large media (> 10MB), upload via Gemini Files API for reliable processing
+      if (isVideo || bufferSize > 10 * 1024 * 1024) {
+        const tempDir = path.join(process.cwd(), ".data", "temp_uploads");
+        if (!fs.existsSync(tempDir)) {
+          fs.mkdirSync(tempDir, { recursive: true });
+        }
+        const tempExt = getExtensionFromMime(defaultMimeType);
+        tempFilePath = path.join(tempDir, `upload_${Date.now()}_${Math.random().toString(36).substring(7)}${tempExt}`);
+        fs.writeFileSync(tempFilePath, Buffer.from(base64Data, "base64"));
+
+        uploadedFileRef = await ai.files.upload({
+          file: tempFilePath,
+          config: {
+            mimeType: defaultMimeType,
+          },
+        });
+
+        // Polling loop for processing video files
+        let getFile = await ai.files.get({ name: uploadedFileRef.name || "" });
+        let retries = 0;
+        while (getFile.state === "PROCESSING" && retries < 30) {
+          console.log(`Video processing state: ${getFile.state}... waiting 2s`);
+          await new Promise((r) => setTimeout(r, 2000));
+          getFile = await ai.files.get({ name: uploadedFileRef.name || "" });
+          retries++;
+        }
+
+        if (getFile.state === "FAILED") {
+          throw new Error("Video processing failed on Gemini server.");
+        }
+
+        generateContentContents = [
+          {
+            fileData: {
+              fileUri: uploadedFileRef.uri,
+              mimeType: defaultMimeType,
+            }
+          },
+          {
+            text: finalPrompt
+          }
+        ];
+      } else {
+        // Fast-path inlineData for smaller audio files & mic recordings
+        generateContentContents = [
           {
             inlineData: {
               mimeType: defaultMimeType,
@@ -301,17 +370,33 @@ async function startServer() {
           {
             text: finalPrompt
           }
-        ],
+        ];
+      }
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: generateContentContents,
       });
 
-      const transcription = response.text || "Could not transcribe the audio.";
+      const transcription = response.text || "Could not transcribe the audio/video voiceover.";
 
       return res.json({ transcription });
     } catch (error: any) {
       console.error("Transcription error:", error);
       return res.status(500).json({
-        error: error.message || "An error occurred during audio transcription. Please make sure the audio file is valid."
+        error: error.message || "An error occurred during transcription. Please make sure the audio or video file is valid."
       });
+    } finally {
+      // Clean up local disk temp file
+      if (tempFilePath && fs.existsSync(tempFilePath)) {
+        try { fs.unlinkSync(tempFilePath); } catch (e) {}
+      }
+      // Clean up Gemini cloud file
+      if (uploadedFileRef && uploadedFileRef.name && ai) {
+        ai.files.delete({ name: uploadedFileRef.name }).catch((e: any) => {
+          console.warn("Failed to delete temp file from Gemini:", e);
+        });
+      }
     }
   });
 
@@ -321,8 +406,9 @@ Your purpose is to answer any questions the user has about this specific project
 Key Details of the Project:
 - Name: Hinglish Audio Transcriber
 - Features:
-  1. Upload Audio Files (supports MP3, WAV, WebM, M4A, etc. up to 50MB).
+  1. Upload Audio & Video Files: Supports audio (MP3, WAV, WebM, M4A, etc.) and videos (MP4, MOV, MKV, WebM, etc. up to 100MB) with automatic voiceover extraction and transcription.
   2. Live Recording: Users can record speech directly from their microphone, with an active real-time canvas waveform visualizer.
+  3. Video Voiceover Transcription: Automatically isolates and transcribes spoken speech, narration, and dialogues from video clips while filtering out background music and noise.
   3. Hinglish Transcription Mode: Transcribes bilingual Hindi/Urdu and English speech into Roman Hinglish (e.g. Roman script: "Main kal office jaunga"). Spells Hindi words phonetically and accurately. Keeps English words in standard spelling.
   4. English Translation Mode: Automatically translates mixed Hinglish/Hindi/Urdu speech directly into clear, grammatical standard English.
   5. English Summary: Provides an automated, elegant 2-3 sentence English summary of the speech.
@@ -332,16 +418,16 @@ Key Details of the Project:
 - Tech Stack: Built using React, Tailwind CSS (v4), Express (Node.js) server, Google Cloud SQL (PostgreSQL) database, and the Google Gemini 3.5 Flash model ('gemini-3.5-flash') using the modern '@google/genai' SDK.
 - Style: Keep replies brief.`;
 
-  const developerInstruction = `You are the official AI Assistant representing Bilal Faisal Arain, the developer of this project.
-Your purpose is to answer any questions about Bilal Faisal Arain, his background, skills, and contact details.
-Key Details of Bilal Faisal Arain:
-- Name: Bilal Faisal Arain
+  const developerInstruction = `You are the official AI Assistant representing Muhammad Bilal Faisal, the developer of this project.
+Your purpose is to answer any questions about Muhammad Bilal Faisal, his background, skills, and contact details.
+Key Details of Muhammad Bilal Faisal:
+- Name: Muhammad Bilal Faisal
 - Title: Full Stack Web Developer & QA Tester
 - Education: Software Engineering Graduate
 - Location: Karachi, Pakistan
-- Email: bilaifaisalarain@gmail.com
-- GitHub: https://github.com/bilaifaisaldev
-- Instagram: https://instagram.com/bilal.faisalarain
+- Email: bilalfaisalarain@gmail.com
+- GitHub: https://github.com/BilalFaisaldev
+- Instagram: https://instagram.com/bilalfaysaldev
 - Bio: Software Engineering Graduate and highly passionate Full Stack Web Developer.
 - Style: Professional, brief replies.`;
 
@@ -712,7 +798,7 @@ Key Details of Bilal Faisal Arain:
       let [user] = await db.select().from(users).where(eq(users.email, email.toLowerCase()));
       if (!user) {
         [user] = await db.insert(users).values({
-          name: "Bilal Faisal Arain",
+          name: "Muhammad Bilal Faisal",
           email: email.toLowerCase(),
           password: "password123",
           role: "Owner",
